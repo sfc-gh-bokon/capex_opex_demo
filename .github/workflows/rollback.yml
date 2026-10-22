@@ -1,0 +1,40 @@
+name: Roll back an environment
+
+# Rollback = redeploy a previously released commit. DCM converges the environment to that
+# version's definitions. Data is untouched; Time Travel covers accidental data changes.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to roll back
+        type: choice
+        options: [uat, prod]
+      ref:
+        description: Git tag or commit SHA of the known-good release
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  SNOWFLAKE_ACCOUNT: ${{ vars.SNOWFLAKE_ACCOUNT }}
+  SNOW_CONN: -x
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      SNOWFLAKE_USER: ${{ vars.SNOWFLAKE_USER || (inputs.environment == 'prod' && 'SVC_CAPEX_GHA_PROD' || 'SVC_CAPEX_GHA_UAT') }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: ./.github/actions/snowflake-login
+        with:
+          private-key: ${{ secrets.SNOWFLAKE_PRIVATE_KEY }}
+      - name: Redeploy known-good release
+        run: |
+          ENV=$(echo "${{ inputs.environment }}" | tr a-z A-Z)
+          bash scripts/deploy.sh "$ENV" "rollback-to-${{ inputs.ref }}" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

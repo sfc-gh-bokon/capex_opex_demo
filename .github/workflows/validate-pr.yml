@@ -1,0 +1,32 @@
+name: Validate pull request
+
+# Every change is planned against DEV before it can merge. No deployment happens here.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  SNOWFLAKE_ACCOUNT: ${{ vars.SNOWFLAKE_ACCOUNT }}
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    environment: dev
+    env:
+      SNOWFLAKE_USER: ${{ vars.SNOWFLAKE_USER || 'SVC_CAPEX_GHA_DEV' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/snowflake-login
+        with:
+          private-key: ${{ secrets.SNOWFLAKE_PRIVATE_KEY }}
+      - name: DCM plan against DEV
+        run: |
+          snow dcm plan --target DEV -x --role CAPEX_DEV_DEPLOYER --warehouse CAPEX_DEV_WH --save-output
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pr-plan
+          path: out/

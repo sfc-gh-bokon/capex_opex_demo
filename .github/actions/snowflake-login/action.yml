@@ -1,0 +1,50 @@
+name: Snowflake login
+description: >
+  Installs Snowflake CLI and builds a temporary connection (`snow ... -x`) from SNOWFLAKE_* env vars.
+  Uses GitHub OIDC (workload identity federation, no stored secret) unless a private key is supplied.
+inputs:
+  private-key:
+    description: PEM private key for key-pair auth. Leave empty to use OIDC (recommended).
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    - name: Check Snowflake settings
+      shell: bash
+      run: |
+        missing=0
+        for v in SNOWFLAKE_ACCOUNT SNOWFLAKE_USER; do
+          if [ -z "${!v:-}" ]; then
+            echo "::error::$v is empty. Add it under Settings > Secrets and variables > Actions > Variables (repo or environment level)."
+            missing=1
+          fi
+        done
+        exit $missing
+
+    - name: Install Snowflake CLI (OIDC)
+      if: inputs.private-key == ''
+      uses: snowflakedb/snowflake-actions@v3
+      with:
+        use-oidc: true
+
+    - name: Install Snowflake CLI (key pair)
+      if: inputs.private-key != ''
+      uses: snowflakedb/snowflake-actions@v3
+
+    - name: Use key-pair authentication
+      if: inputs.private-key != ''
+      shell: bash
+      env:
+        KEY: ${{ inputs.private-key }}
+      run: |
+        {
+          echo "SNOWFLAKE_AUTHENTICATOR=SNOWFLAKE_JWT"
+          echo "SNOWFLAKE_PRIVATE_KEY_RAW<<__SNOWFLAKE_KEY__"
+          echo "$KEY"
+          echo "__SNOWFLAKE_KEY__"
+        } >> "$GITHUB_ENV"
+
+    - name: Test connection
+      shell: bash
+      run: snow connection test -x

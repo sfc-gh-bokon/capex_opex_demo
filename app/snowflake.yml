@@ -1,0 +1,18 @@
+definition_version: 2
+entities:
+  capex_review_app:
+    type: streamlit
+    identifier:
+      name: CAPEX_REVIEW_APP
+      database: <% ctx.env.CAPEX_DB %>
+      schema: APP
+    query_warehouse: <% ctx.env.CAPEX_WH %>
+    runtime_name: SYSTEM$ST_CONTAINER_RUNTIME_PY3_11
+    compute_pool: SYSTEM_COMPUTE_POOL_CPU
+    main_file: streamlit_app.py
+    title: CapEx / OpEx classification review
+    artifacts:
+      - streamlit_app.py
+env:
+  CAPEX_DB: CAPEX_DEV
+  CAPEX_WH: CAPEX_DEV_WH

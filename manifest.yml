@@ -1,0 +1,40 @@
+manifest_version: 2
+type: DCM_PROJECT
+default_target: 'DEV'
+
+targets:
+  DEV:
+    account_identifier: MYORG-MYACCOUNT   # your <org>-<account>
+    project_name: 'CAPEX_DEV.DCM.CAPEX_PIPELINE'
+    project_owner: CAPEX_DEV_DEPLOYER
+    templating_config: 'DEV'
+  UAT:
+    account_identifier: MYORG-MYACCOUNT   # your <org>-<account>
+    project_name: 'CAPEX_UAT.DCM.CAPEX_PIPELINE'
+    project_owner: CAPEX_UAT_DEPLOYER
+    templating_config: 'UAT'
+  PROD:
+    account_identifier: MYORG-MYACCOUNT   # your <org>-<account>
+    project_name: 'CAPEX_PROD.DCM.CAPEX_PIPELINE'
+    project_owner: CAPEX_PROD_DEPLOYER
+    templating_config: 'PROD'
+
+templating:
+  defaults:
+    env: 'DEV'
+    ingest_schedule: '30 MINUTE'
+    ai_review_schedule: '5 MINUTE'
+    gold_lag: '5 minutes'
+    task_state: 'STARTED'
+    ai_model: 'claude-sonnet-4-5'
+    engineer_can_write: true
+  configurations:
+    DEV:
+      env: 'DEV'
+    UAT:
+      env: 'UAT'
+      engineer_can_write: false
+    PROD:
+      env: 'PROD'
+      gold_lag: '30 minutes'
+      engineer_can_write: false

@@ -1,0 +1,94 @@
+name: Release CapEx/OpEx pipeline
+
+# One version-controlled release moves DEV -> UAT -> PROD.
+# - Each job authenticates as a per-environment service user that holds only that
+#   environment's deployer role. OIDC by default (no stored credentials); key pair if the
+#   environment has a SNOWFLAKE_PRIVATE_KEY secret. See README "Set up CI/CD".
+# - Settings come from GitHub variables: SNOWFLAKE_ACCOUNT (repo level) and, optionally,
+#   SNOWFLAKE_USER per environment (defaults to SVC_CAPEX_GHA_<ENV>).
+# - The `prod` GitHub environment requires a reviewer approval (change-approval gate).
+# - Only code and approved criteria are promoted; data and review decisions stay put.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'manifest.yml'
+      - 'sources/**'
+      - 'app/**'
+      - 'scripts/**'
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  SNOWFLAKE_ACCOUNT: ${{ vars.SNOWFLAKE_ACCOUNT }}
+  SNOW_CONN: -x
+  RELEASE: r${{ github.run_number }}
+
+jobs:
+  dev:
+    runs-on: ubuntu-latest
+    environment: dev
+    env:
+      SNOWFLAKE_USER: ${{ vars.SNOWFLAKE_USER || 'SVC_CAPEX_GHA_DEV' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/snowflake-login
+        with:
+          private-key: ${{ secrets.SNOWFLAKE_PRIVATE_KEY }}
+      - name: Deploy to DEV
+        run: bash scripts/deploy.sh DEV "$RELEASE" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+      - name: AI regression test against Finance-reviewed examples
+        run: |
+          snow sql -x --role CAPEX_DEV_DEPLOYER --warehouse CAPEX_DEV_WH --format json \
+            -q "CALL CAPEX_DEV.CONTROL.RUN_AI_EVAL()" > eval.json
+          python3 scripts/check_eval.py eval.json 0.90
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dev-plan
+          path: out/
+
+  uat:
+    needs: dev
+    runs-on: ubuntu-latest
+    environment: uat
+    env:
+      SNOWFLAKE_USER: ${{ vars.SNOWFLAKE_USER || 'SVC_CAPEX_GHA_UAT' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/snowflake-login
+        with:
+          private-key: ${{ secrets.SNOWFLAKE_PRIVATE_KEY }}
+      - name: Deploy to UAT
+        run: bash scripts/deploy.sh UAT "$RELEASE" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: uat-plan
+          path: out/
+
+  prod:
+    needs: uat
+    runs-on: ubuntu-latest
+    environment: prod   # protected: required reviewer = change approval
+    env:
+      SNOWFLAKE_USER: ${{ vars.SNOWFLAKE_USER || 'SVC_CAPEX_GHA_PROD' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/snowflake-login
+        with:
+          private-key: ${{ secrets.SNOWFLAKE_PRIVATE_KEY }}
+      - name: Plan PROD (recorded for change ticket)
+        run: snow dcm plan --target PROD -x --role CAPEX_PROD_DEPLOYER --warehouse CAPEX_PROD_WH --save-output
+      - name: Deploy to PROD
+        run: bash scripts/deploy.sh PROD "$RELEASE" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prod-plan
+          path: out/
